@@ -40,15 +40,17 @@ def compute_efficiency(spin, isco) :
     energy_at_isco=(isco**2-2*isco+spin*np.sqrt(isco))/isco/np.sqrt(isco**2-3*isco+2*spin*np.sqrt(isco))
     return 1-energy_at_isco
 
-def DiskCoronaSim(mass_input, mdot_input, photon_index=1.9,spin_input=0,
+def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
                 disk_emfreq=const.c.cgs/(3000*u.angstrom).cgs*u.s, cor_emfreq=2.,
                 Ex_low=2., Ex_up=10,
                 mu=0.5, fmax=0.99, alpha_0=0.02,
-                albedo=0.1, downward_scattering=0.55) :
+                albedo=0.1, downward_scattering=0.55,
+                overwrite=False) :
     """
     Some initial comments
 
-    mass_input, mdot_input: Linear values are needed in the calculations.
+    mass_input, mdot_input: Linear values are needed in the calculations. Values are normalized to solar masses
+                            and Eddington, respectively. Example: 1e8 for mass and 0.5 for mdot.
                             Also solar-mass BHs can be calculated.
                             Accretion rate in the sweet-spot of (0.0x-1) Edd.
                             Use your own knowledge to give values for which a
@@ -82,9 +84,30 @@ def DiskCoronaSim(mass_input, mdot_input, photon_index=1.9,spin_input=0,
 
 
     Riccardo Arcodia
-    Add paper url
-    Ask about copyright to Johannes.
     """
+    name_data_dir='data'
+    data_filename=name_data_dir+'/Data_logm%s_mdot%s_gamma_%s_spin_%s.json'  %( str(round(np.log10(mass_input),2)), str(mdot_input), str(photon_index), str(spin_input))
+
+    if os.path.exists(data_filename) and overwrite==False :
+        print(  "The model with logM={}, mdot={}, photon_index={}, spin={} was already run and stored".format(round(np.log10(mass_input),2),
+                                                                                                              mdot_input,
+                                                                                                              photon_index,
+                                                                                                              spin_input) )
+        return None
+
+    else :
+        print(  "Running model with logM={}, mdot={}, photon_index={}, spin={}...".format(round(np.log10(mass_input),2),
+                                                                                       mdot_input,
+                                                                                       photon_index,
+                                                                                       spin_input) )
+
+    if mdot_input<0.01 or mdot_input>1 :
+        print(  "WARNING: you are using a value of mdot={}, not recommended given the assumptions in the model.".format(mdot_input))
+        print(  "Use at your own risk. Please consider using a value between 0.0x and 1.")
+
+    if spin_input>0.998 and spin_input<-0.998 :
+        print(  "ERROR: you are using a value of spin={}, outside of the possible range (-0.998,0.998).".format(spin_input))
+        return None
 
     #-----------------------Loading opacity tables--------------------------------------
     T_OP,rho_OP,k_OP, deriv_logk_asf_logT=np.genfromtxt('Opacity/OP_table',usecols=(0,1,3,4), comments='#', unpack=True)
@@ -221,10 +244,16 @@ def DiskCoronaSim(mass_input, mdot_input, photon_index=1.9,spin_input=0,
         return (x**(-1./10))*(y**(1./5))
 
     def func_Lxmono(x) :
-        return x*(1-(photon_index-1))*nu_x**(-(photon_index-1))/(nu_x_2**(1-(photon_index-1))-nu_x_1**(1-(photon_index-1)))
+        if photon_index!=2 :
+            return x*(1-(photon_index-1))*nu_x**(-(photon_index-1))/(nu_x_2**(1-(photon_index-1))-nu_x_1**(1-(photon_index-1)))
+        else :
+            return x*(1-(photon_index+0.0001-1))*nu_x**(-(photon_index+0.0001-1))/(nu_x_2**(1-(photon_index+0.0001-1))-nu_x_1**(1-(photon_index+0.0001-1)))
 
     def func_Lxbroad(x) :
-        return x*(nux_up**(1-(photon_index-1))-nux_low**(1-(photon_index-1)))/(nu_x_2**(1-(photon_index-1))-nu_x_1**(1-(photon_index-1)))
+        if photon_index!=2 :
+            return x*(nux_up**(1-(photon_index-1))-nux_low**(1-(photon_index-1)))/(nu_x_2**(1-(photon_index-1))-nu_x_1**(1-(photon_index-1)))
+        else :
+            return x*(nux_up**(1-(photon_index+0.0001-1))-nux_low**(1-(photon_index+0.0001-1)))/(nu_x_2**(1-(photon_index+0.0001-1))-nu_x_1**(1-(photon_index+0.0001-1)))
 
     A_gas_constant_terms=(closure_constgas)*(k_0**(-1./5))*((alpha_0)**(1./10))*(xi**(-9./10))
     A_gas_radial_terms=J(r)**(4./5)*(r**(-21./20))
@@ -614,12 +643,12 @@ def DiskCoronaSim(mass_input, mdot_input, photon_index=1.9,spin_input=0,
                 else :
                     opacity_from_tables=np.random.uniform(low=0.95*Opacity[-1], high=Opacity[-1])
             if iteration==15 and len(Opacity)>0 :
-                if f>0.7 :
+                if fmax>0.7 :
                     opacity_from_tables=Opacity[-1]
                 else :
                     opacity_from_tables=(abs(opacity_temp+opacity_from_tables))/2
             if iteration==30 and len(Opacity)>0 :
-                if f>0.7 :
+                if fmax>0.7 :
                     opacity_from_tables=Opacity[-1]*1.5
                 else :
                     opacity_from_tables=(abs(opacity_temp+opacity_from_tables))/2
@@ -731,7 +760,7 @@ def DiskCoronaSim(mass_input, mdot_input, photon_index=1.9,spin_input=0,
 
     #-----------------Saving data---------------------------------
 
-    data_dir="data"
+    data_dir=name_data_dir
     datadir = os.path.join(data_dir)
     if not os.path.exists(datadir):
         os.makedirs(datadir)
@@ -809,5 +838,4 @@ def DiskCoronaSim(mass_input, mdot_input, photon_index=1.9,spin_input=0,
                         'radius_unstable_rad', 'radius_adv_rad', 'stable_f_r_gas', 'unstable_f_r_gas',
                         'adv_f_r_gas', 'radius_stable_gas', 'radius_unstable_gas', 'radius_adv_gas']
 
-    filename='data/Data_logm%s_mdot%s_gamma_%s.json'  %( str(np.log10(mass_input)), str(mdot_input), str(photon_index))
-    Save_data(stuff_to_save,name_stuff_to_save,filename)
+    Save_data(stuff_to_save,name_stuff_to_save,data_filename)
