@@ -20,13 +20,15 @@ Comments welcome. For any questions, please send me an email at arcodia@mpe.mpg.
 How to use
 ==========
 
-Make sure you have the required python modules installed (see requirements.txt and add the modules to your python3 environment or try:: pip3 install -r requirements.txt --user).
+Make sure you have the required python modules installed (see requirements.txt and add the modules to your python3 environment or try: pip3 install -r requirements.txt --user).
 
-Simply import DiskCoronaSim, then run the function called DiskCoronaSim.runmodel() with the parameters of interest (see details in DiskCoronaSim.py).
+Please see a few quick examples on the jupyter notebook "quick_tutorial".
 
-Results will be stored in json files (see details at the end of DiskCoronaSim.py).
+Simply import DiskCoronaSim and Plot, then run the function called DiskCoronaSim.runmodel() with the parameters of interest (see details in DiskCoronaSim.py).
 
-Plotting routine and a visualization tool will be added soon.
+Results will be stored in json files (see details at the end of DiskCoronaSim.py): for instance, the integrated monochromatic disk and corona luminosities are stored there.
+
+Plotting scripts are available (see Plot.py).
 
 ===================
 Model in a nutshell

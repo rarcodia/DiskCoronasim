@@ -40,6 +40,12 @@ def compute_efficiency(spin, isco) :
     energy_at_isco=(isco**2-2*isco+spin*np.sqrt(isco))/isco/np.sqrt(isco**2-3*isco+2*spin*np.sqrt(isco))
     return 1-energy_at_isco
 
+def toiter(v):
+    try:
+        return list(v)
+    except Exception:
+        return (v,)
+
 def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
                 disk_emfreq=const.c.cgs/(3000*u.angstrom).cgs*u.s, cor_emfreq=2.,
                 Ex_low=2., Ex_up=10,
@@ -147,8 +153,9 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
     eps0=compute_efficiency(spin_input, compute_ISCO(spin_input))
     r_0=compute_ISCO(spin_input)/2
     log_r0=np.log10(r_0)
-    jmax=200+1000*abs(spin_input) #Log step N between r_0 and rmax
+    jmax=600+1000*abs(spin_input) #Log step N between r_0 and rmax
     #Note:jmax needs to be a function of spin just for numerical problems in solving f(r) for high-spin
+    #decrease it to 200 once a more thorough interpolation
     rmax=2000
     log_rmax=np.log10(rmax)
     r = np.logspace(log_r0, log_rmax, jmax)
@@ -478,7 +485,7 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
     Temperature_term_gas_mmdot_terms=Rs_mmdot**(-1./4)*Temperature_term_gas_mmdot(mass_input,mdot_input)
     for j in range (1, len(r)):
         #the numerical way obtaining "correct" opacities is not so smart and not very pythonic but it kind of works so..
-        #rewrite the code decently at some point
+        #rewrite the code with a more thorough interpolation method at some point
         stuck_at_first_radius=False
         opacity_jumped=False
         opacity_list_check=[]
@@ -765,21 +772,15 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
     if not os.path.exists(datadir):
         os.makedirs(datadir)
 
-    def toiter(v):
-        try:
-            return list(v)
-        except Exception:
-            return (v,)
-
     def Save_data(arrays, names, file_name) :
-        data=[]
+        data={}
         for ii_thing, thing in enumerate(arrays) :
             thing=toiter(thing)
             try :
                 thing=[float(i) for i in thing]
             except Exception :
                 pass
-            data.append({
+            data.update({
                 '%s' %(names[ii_thing]): thing
         })
         json.dump(data, open(file_name, 'w'), indent=4)
