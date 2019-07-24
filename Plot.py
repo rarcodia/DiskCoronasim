@@ -246,7 +246,7 @@ def plot_data(data_json_list, data_json_filenames,
         ax_rho.set_yscale('log')
         ax_rho.set_xlim(rmin,rmax)
         ax_rho.set_xlabel(r'$R/R_{s}$', fontsize = 22)
-        ax_rho.set_ylabel(r'$\rho(r)\,\,[g\,\,cm^{-3}]$',rotation='vertical', fontsize = 12)
+        ax_rho.set_ylabel(r'$\rho(r)\,\,[g\,\,cm^{-3}]$',rotation='vertical', fontsize = 22)
         if single_object==False :
             for i_obj, obj in enumerate(data_json_list) :
                 color = color_mdot.to_rgba(mdot_array[i_obj])
@@ -337,7 +337,7 @@ def plot_data(data_json_list, data_json_filenames,
         if single_object==False :
             for i_obj, obj in enumerate(data_json_list) :
                 color = color_mdot.to_rgba(mdot_array[i_obj])
-                ax_opacity.plot(obj['radius_array'], obj['opacity'], '-', markersize=8, color=color, lw=1.5)
+                ax_opacity.plot(obj['radius_array'], obj['opacity'], '-', markersize=8, color=color, lw=3)
             plt.colorbar(mappable=color_mdot, label=r'$\dot{m}$')
         else :
             ax_opacity.plot(data_json_list['radius_array'], data_json_list['opacity'], '-', markersize=8, color='black', lw=3)

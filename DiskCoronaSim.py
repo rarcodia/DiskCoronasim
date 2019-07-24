@@ -7,6 +7,7 @@ from math import e
 from astropy import constants as const
 from astropy import units as u
 from scipy.optimize import fsolve
+from scipy import interpolate
 import warnings
 warnings.filterwarnings("ignore")
 import json
@@ -30,11 +31,14 @@ Leddc=1.3e38
 
 #from https://ui.adsabs.harvard.edu/abs/2005ApJ...620...59S/abstract
 #where spin here is intended the dimensionless BH specific angular momentum |J|c/(GM^2), typically from -0.998 to 0.998
-#returns the isco per unit mass..so already normalized in Rs
+#returns the isco per unit mass, in units of rg
 def compute_ISCO(spin) :
     zed1=1+(1-spin**2)**(1/3)*((1+spin)**(1/3)+(1-spin)**(1/3))
     zed2=np.sqrt(3*spin**2+zed1**2)
-    return 3+zed2-np.sqrt((3-zed1)*(3+zed1+2*zed2)) #in units of rg
+    if spin>0 :
+        return 3+zed2-np.sqrt((3-zed1)*(3+zed1+2*zed2))
+    else :
+        return 3+zed2+np.sqrt((3-zed1)*(3+zed1+2*zed2))
 
 def compute_efficiency(spin, isco) :
     energy_at_isco=(isco**2-2*isco+spin*np.sqrt(isco))/isco/np.sqrt(isco**2-3*isco+2*spin*np.sqrt(isco))
@@ -66,7 +70,9 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
     photon_index: slope of the observed X-ray spectrum.
 
     spin_input: from -0.998 to 0.998. It will automatically change the r_ISCO and
-                the radiative efficiency.
+                the radiative efficiency. If the interpolation of f(r) does funny
+                things at the minimum (small r), increase jmax, the log-step of
+                the radius array
 
     disk_emfreq: Input frequency for the disk luminosity (in units of Hz).
         Also X-ray frequency in case of a binary black hole are
@@ -88,8 +94,10 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
                          the disk. It is included in the disk's energy balance.
                          See Arcodia et al. (2019).
 
+    overwrite: simply a flag to overwrite previous run with the same main parameters:
+               mass, accretion rate, photon index, spin.
 
-    Riccardo Arcodia
+    Written by Riccardo Arcodia: arcodia@mpe.mpg.de
     """
     name_data_dir='data'
     data_filename=name_data_dir+'/Data_logm%s_mdot%s_gamma_%s_spin_%s.json'  %( str(round(np.log10(mass_input),2)), str(mdot_input), str(photon_index), str(spin_input))
@@ -151,11 +159,13 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
 
     #------------------Defining some input dependent quantities--------------
     eps0=compute_efficiency(spin_input, compute_ISCO(spin_input))
-    r_0=compute_ISCO(spin_input)/2
+    r_0=compute_ISCO(spin_input)/2 #i want it in units of Rs
     log_r0=np.log10(r_0)
-    jmax=600+1000*abs(spin_input) #Log step N between r_0 and rmax
-    #Note:jmax needs to be a function of spin just for numerical problems in solving f(r) for high-spin
-    #decrease it to 200 once a more thorough interpolation
+    if mass_input<5e9 :
+        jmax=200+800*(1+abs(spin_input))**4 #Log step N between r_0 and rmax
+    else :
+        jmax=600+1000*(1+abs(spin_input))**4
+    #Note:jmax needs to be a function of spin just for numerical problems in solving f(r) for high-spin, high_mdot and high_mass. Needed to avoid weird interpolations.
     rmax=2000
     log_rmax=np.log10(rmax)
     r = np.logspace(log_r0, log_rmax, jmax)
@@ -172,10 +182,6 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
 
     #Input frequency for the disk has to be in Hz. Default is 3000A in Hz.
     nu_disk=disk_emfreq
-    #if disk_emfreq>1e4 :
-    #    nu_disk=disk_emfreq
-    #else :
-    #    nu_disk=const.c.cgs/(disk_emfreq*u.angstrom).cgs*u.s
 
     #input energy/frequency for the corona.
     def keV_to_Hz(keV) :
@@ -194,12 +200,12 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
     nu_x_2=2.417990504024e+19 #100keV
 
     #------------------Prad>> and Pgas>> constants definition--------------
-    #Prad regime constants
+    #Prad>> regime constants
     A_const=(2**(7./2)*const_a**2*eps0*np.pi*(const.G.cgs*u.g*u.s*u.s/(u.cm**3))*(const.M_sun.cgs/u.g))/(9.*kes*Leddc*rhs_q)
     B_const=2./3*rhs_q*(3./const_a)**(3./2)
     C_const=const_a*mh/6/const_kb
     h_propconst=3*Leddc*const_c**3/(2**(9./2)*eps0*np.pi*(const.G.cgs*u.g*u.s*u.s/(u.cm**3))**2*(const.M_sun.cgs/u.g)**2*const_a)/A_const/(B_const)**2
-    #Pgas regime constants
+    #Pgas>> regime constants
     xi=1.00*(k_0**(-1./3))
     T_constgas=((3*mh*Leddc*rhs_q*kes)/(2**(9./2)*np.pi*const_kb*eps0*const_a*(const.G.cgs*u.g*u.s*u.s/(u.cm**3))*(const.M_sun.cgs/u.g)))**(1./5)
     h_constgas=T_constgas**(-2.)*2**(7./4)*rhs_q*const_c**(-3.)*(kes*(const.G.cgs*u.g*u.s*u.s/(u.cm**3))*(const.M_sun.cgs/u.g)/const_a)**(1./2)
@@ -208,9 +214,9 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
     closure_constgas=mh*const_a/(6*const_kb*rho_constgas)*T_constgas**3
     #they contain kes (electron scattering opacity), it will be updated later in the loop
 
-    #----------------------------------------------------------------------
-    #-------------------Some computations that can be done before the loops
-    #----------------------------------------------------------------------
+    #---------------------------------------------------------------------
+    #-------------------Some computations that can be done before the loop
+    #---------------------------------------------------------------------
     A_constant_terms=(A_const**(-9./(mu+4.)))*(B_const**(-10./(mu+4.)))*(C_const**(4./(mu+4.)))*(k_0**(1./(mu+4.)))*((alpha_0)** (1./(mu+4.)))
     A_radial_terms=((J(r))**(8./(mu+4.)))*(r**(-21./(2.*(mu+4.))))
     def A_mmdot(x,y) :
@@ -394,17 +400,17 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
             Derivative_Opacity.append(Derivative_Opacity_closest(Tmid_rad[-1], rho_rad[-1])[0])
             A.append(A[-1])
             Q.append(Q[-1])
-            T_nof.append(T_nof[1][-1])
-            rho_nof.append(rho_nof[1][-1])
-            P_nof.append(P_nof[1][-1])
-            h_nof.append(h_nof[1][-1])
+            T_nof.append(T_nof[-1])
+            rho_nof.append(rho_nof[-1])
+            P_nof.append(P_nof[-1])
+            h_nof.append(h_nof[-1])
         elif check_rad==False :
             A_gas.append(A[-1])
             Q.append(Q[-1])
-            T_gas_nof.append(T_nof[1][-1])
-            rho_gas_nof.append(rho_nof[1][-1])
-            P_gas_nof.append(P_nof[1][-1])
-            h_gas_nof.append(h_nof[1][-1])
+            T_gas_nof.append(T_nof[-1])
+            rho_gas_nof.append(rho_nof[-1])
+            P_gas_nof.append(P_nof[-1])
+            h_gas_nof.append(h_nof[-1])
             sol_gas.append(sol_rad[-1])
             f_array.append(sol_rad[-1])
             radius_gas.append(r[j])
@@ -440,17 +446,17 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
             Derivative_Opacity.append(Derivative_Opacity_closest(Tmid_gas[-1], rho_gas[-1])[0])
             A.append(A_gas[1][-1])
             Q.append(Q[-1])
-            T_nof.append(T_gas_nof[1][-1])
-            rho_nof.append(rho_gas_nof[1][-1])
-            P_nof.append(P_gas_nof[1][-1])
-            h_nof.append(h_gas_nof[1][-1])
+            T_nof.append(T_gas_nof[-1])
+            rho_nof.append(rho_gas_nof[-1])
+            P_nof.append(P_gas_nof[-1])
+            h_nof.append(h_gas_nof[-1])
         elif check_rad==False :
-            A_gas.append(A_gas[1][-1])
+            A_gas.append(A_gas[-1])
             Q.append(Q[-1])
-            T_gas_nof.append(T_gas_nof[1][-1])
-            rho_gas_nof.append(rho_gas_nof[1][-1])
-            P_gas_nof.append(P_gas_nof[1][-1])
-            h_gas_nof.append(h_gas_nof[1][-1])
+            T_gas_nof.append(T_gas_nof[-1])
+            rho_gas_nof.append(rho_gas_nof[-1])
+            P_gas_nof.append(P_gas_nof[-1])
+            h_gas_nof.append(h_gas_nof[-1])
             sol_gas.append(sol_gas[-1])
             f_array.append(sol_gas[-1])
             radius_gas.append(r[j])
@@ -484,8 +490,8 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
     Temperature_term_rad_mmdot_terms=Rs_mmdot**(-1./4)*Temperature_term_rad_mmdot(mass_input,mdot_input)
     Temperature_term_gas_mmdot_terms=Rs_mmdot**(-1./4)*Temperature_term_gas_mmdot(mass_input,mdot_input)
     for j in range (1, len(r)):
-        #the numerical way obtaining "correct" opacities is not so smart and not very pythonic but it kind of works so..
-        #rewrite the code with a more thorough interpolation method at some point
+        #the numerical way obtaining "correct" opacities is not very pythonic but it kind of works so..
+        #below I correct for any numerical "errors" with an interpolation
         stuck_at_first_radius=False
         opacity_jumped=False
         opacity_list_check=[]
@@ -603,7 +609,8 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
                     Qplus_temp=Q_temp*2*np.pi*r[j]*(r[j]-r[j-1])*(Rs_mmdot**2)
                     check_rad=False
             #------------------Check the opacity value and choose the next one----------------
-            #these bit is really messy and empirical and not really well written
+            #I need to iteratively run the model up to an opacity/temperature/density self-consistent with the stellar tables.
+            #These bit is really messy. But the interpolation below should solve possible numerical errors.
             ratio_opacities=round(opacity_temp/opacity_from_tables,3)
             if len(opacity_list_check)<3 :
                 opacity_list_check.append(opacity_temp)
@@ -641,7 +648,7 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
                 break
             if stuck_at_first_radius==True :
                 if 0.90<=opacity_temp/opacity_from_tables<=1.10 :
-                    use_computed_stuff
+                    use_computed_stuff()
                     break
             if opacity_jumped==True :
                 if 0.30<=opacity_temp/opacity_from_tables<=1.70 :
@@ -674,8 +681,74 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
                 iteration=iteration+1
                 continue
 
+    #------------------Interpolate profiles
+    #The opacity iteration process above "fails" for high spin and high mdot, i.e. for some radii f(r) and the "right" opacity are not found
+    #Here I try to correct the radial profiles for any numerical "error"
+    #if problematic_radii has too many consecutive radii, then the cubic interpolation does something funny.
+    #if it's the case, increase jmax (the log-step of the radii array) or, if this does not change much, use a more brutal linear interpolation for that object
+    if len(f_array)!=len(set(f_array)) :
+        problematic_radii=[]
+        radius_array_norepet=[]
+        f_array_norepet=[]
+        opacity_norepet=[]
+        for index in range(1,len(f_array)) :
+            if f_array[index]==f_array[index-1] :
+                problematic_radii.append(r[1:][index])
+            else :
+                radius_array_norepet.append(r[1:][index])
+                f_array_norepet.append(f_array[index])
+                opacity_norepet.append(Opacity[index])
+        f_interpolation = interpolate.interp1d(radius_array_norepet, f_array_norepet, kind='cubic')
+        opacity_interpolation = interpolate.interp1d(radius_array_norepet, opacity_norepet, kind='cubic')
+        for i_radius in range (1, len(r)):
+            if r[i_radius] in problematic_radii :
+                new_f=f_interpolation(r[i_radius])
+                new_opacity=opacity_interpolation(r[i_radius])
+                f_array[i_radius]=new_f
+                Opacity[i_radius]=new_opacity
+                Q[i_radius]=Q_mmdot_terms*Q_radial_terms[i_radius]
+                Qplus[i_radius]=Q_mmdot_terms*Q_radial_terms[i_radius]*2*np.pi*r[i_radius]*(r[i_radius]-r[i_radius-1])*(Rs_mmdot**2)
+                if r[i_radius] in radius_rad :
+                    right_index=np.where(radius_rad==r[i_radius])[0][0]
+                    sol_rad[right_index]=new_f
+                    radius_rad[right_index]=r[i_radius]
+                    Lx_rad[right_index]=func_Lxmono(new_f*(1-downward_scattering)*Q_mmdot_terms*Q_radial_terms[i_radius]*2*np.pi*r[i_radius]*(r[i_radius]-r[i_radius-1])*(Rs_mmdot**2))
+                    Lx_broadband_rad[right_index]=func_Lxbroad(new_f*(1-downward_scattering)*Q_mmdot_terms*Q_radial_terms[i_radius]*2*np.pi*r[i_radius]*(r[i_radius]-r[i_radius-1])*(Rs_mmdot**2))
+                    radius_Ldisk_rad[right_index]=r[i_radius]
+                    Tem_rad[right_index]=T_nof_mmdot_terms*T_nof_radial_terms[i_radius]*T_nof_constant_terms*(1-new_f*(1-downward_scattering*(1-albedo)))**(1./4)*Temperature_term_rad_constants*Temperature_term_rad_mmdot_terms*Temperature_term_rad_radial[i_radius]
+                    Tmid_rad[right_index]=T_nof_mmdot_terms*T_nof_radial_terms[i_radius]*T_nof_constant_terms*(new_opacity/kes)**((2*mu-1)/(mu+4))*(1-new_f*(1-downward_scattering*(1-albedo)))**((2*mu-1)/(mu+4))
+                    Ldisk_rad[right_index]=2*np.pi*r[i_radius]*(r[i_radius]-r[i_radius-1])*(Rs_mmdot**2)*BB_Flux_mononu(T_nof_mmdot_terms*T_nof_radial_terms[i_radius]*T_nof_constant_terms*(1-new_f*(1-downward_scattering*(1-albedo)))**(1./4)*Temperature_term_rad_constants*Temperature_term_rad_mmdot_terms*Temperature_term_rad_radial[i_radius])
+                    rho_rad[right_index]=rho_mmdot_terms_rad*rho_radial_terms_rad[i_radius]*rho_constant_terms_rad*(new_opacity/kes)**(6*(mu-2)/(mu+4))*(1-new_f*(1-downward_scattering*(1-albedo)))**(6*(mu-2)/(mu+4))
+                    P_rad[right_index]=P_mmdot_terms_rad*P_radial_terms_rad[i_radius]*P_constant_terms_rad*(new_opacity/kes)**(4*(2*mu-1)/(mu+4))*(1-new_f*(1-downward_scattering*(1-albedo)))**(4*(2*mu-1)/(mu+4))
+                    h_rad[right_index]=h_propconst*(new_opacity/kes)*mdot_input*J(r[i_radius])*(1-new_f*(1-downward_scattering*(1-albedo)))
+                    Derivative_Opacity[right_index]=Derivative_Opacity_closest(Tmid_rad[i_radius], rho_rad[i_radius])[0]
+                    A[right_index]=A_constant_terms*(new_opacity/kes)**(9./(mu+4))*A_mmdot_terms*A_radial_terms[i_radius]
+                    T_nof[right_index]=T_nof_mmdot_terms*T_nof_radial_terms[i_radius]*T_nof_constant_terms*(new_opacity/kes)**((2*mu-1)/(mu+4))
+                    rho_nof[right_index]=rho_mmdot_terms_rad*rho_radial_terms_rad[i_radius]*rho_constant_terms_rad*(new_opacity/kes)**(6*(mu-2)/(mu+4))
+                    P_nof[right_index]=P_mmdot_terms_rad*P_radial_terms_rad[i_radius]*P_constant_terms_rad*(new_opacity/kes)**(4*(2*mu-1)/(mu+4))
+                    h_nof[right_index]=h_propconst*(new_opacity/kes)*mdot_input*J(r[i_radius])
+                elif r[i_radius] in radius_gas :
+                    right_index=np.where(radius_gas==r[i_radius])[0][0]
+                    sol_gas[right_index]=new_f
+                    radius_gas[right_index]=r[i_radius]
+                    radius_Ldisk_gas[right_index]=r[i_radius]
+                    Lx_gas[right_index]=func_Lxmono(new_f*(1-downward_scattering)*Q_mmdot_terms*Q_radial_terms[i_radius]*2*np.pi*r[i_radius]*(r[i_radius]-r[i_radius-1])*(Rs_mmdot**2))
+                    Lx_broadband_gas[right_index]=func_Lxbroad(new_f*(1-downward_scattering)*Q_mmdot_terms*Q_radial_terms[i_radius]*2*np.pi*r[i_radius]*(r[i_radius]-r[i_radius-1])*(Rs_mmdot**2))
+                    Tem_gas[right_index]=T_gas_nof_mmdot_terms*T_gas_nof_radial_terms[i_radius]*T_gas_nof_constant_terms*(1-new_f*(1-downward_scattering*(1-albedo)))**(1./4)*Temperature_term_gas_constants*Temperature_term_gas_mmdot_terms*Temperature_term_gas_radial[i_radius]
+                    Tmid_gas[right_index]=T_gas_nof_mmdot_terms*T_gas_nof_radial_terms[i_radius]*T_gas_nof_constant_terms*(new_opacity/kes)**(1./5)*(1-new_f*(1-downward_scattering*(1-albedo)))**(1./5)
+                    Ldisk_gas[right_index]=2*np.pi*r[i_radius]*(r[i_radius]-r[i_radius-1])*(Rs_mmdot**2)*BB_Flux_mononu(T_gas_nof_mmdot_terms*T_gas_nof_radial_terms[i_radius]*T_gas_nof_constant_terms*(1-new_f*(1-downward_scattering*(1-albedo)))**(1./4)*Temperature_term_gas_constants*Temperature_term_gas_mmdot_terms*Temperature_term_gas_radial[i_radius])
+                    P_gas[right_index]=P_mmdot_terms_gas*P_radial_terms_gas[i_radius]*P_constant_terms_gas*(new_opacity/kes)**(-1./10)*(1-new_f*(1-downward_scattering*(1-albedo)))**(-1./10)
+                    h_gas[right_index]=h_mmdot_terms_gas*h_radial_terms_gas[i_radius]*h_constant_terms_gas*(new_opacity/kes)**(1./10)*(1-new_f*(1-downward_scattering*(1-albedo)))**(1./10)
+                    rho_gas[right_index]=rho_mmdot_terms_gas*rho_radial_terms_gas[i_radius]*rho_constant_terms_gas*(new_opacity/kes)**(-3./10)*(1-new_f*(1-downward_scattering*(1-albedo)))**(-3./10)
+                    A_gas[right_index]=A_gas_constant_terms*A_gas_mmdot_terms*A_gas_radial_terms[i_radius]*(new_opacity/kes)**(9./10)
+                    T_gas_nof[right_index]=T_gas_nof_mmdot_terms*T_gas_nof_radial_terms[i_radius]*T_gas_nof_constant_terms*(new_opacity/kes)**(1./5)
+                    rho_gas_nof[right_index]=rho_mmdot_terms_gas*rho_radial_terms_gas[i_radius]*rho_constant_terms_gas*(new_opacity/kes)**(-3./10)
+                    P_gas_nof[right_index]=P_mmdot_terms_gas*P_radial_terms_gas[i_radius]*P_constant_terms_gas*(new_opacity/kes)**(-1./10)
+                    h_gas_nof[right_index]=h_mmdot_terms_gas*h_radial_terms_gas[i_radius]*h_constant_terms_gas*(new_opacity/kes)**(1./10)
+
     #------------------Computing total luminosities
     #At each radius Lx and Ldisk computed were the luminosities in the annulus at a given radius
+    #Their sum is already the integral!
     Ldisk_tot=np.sum(Ldisk_rad)+np.sum(Ldisk_gas)
     Ldisk_tot_nuFnu=nu_disk*Ldisk_tot
     Lcor_tot=np.sum(Lx_rad)+np.sum(Lx_gas)
@@ -684,6 +757,7 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
 
     #--------------------------------------------------------------
     #------------------Computing stabilities on the final solutions
+    #Read Merloni (2003) for the stability conditions
     #--------------------Prad>> regime  instabilities
     def stability_condition_1(f_solution) :
         return ((mu+4)/(2*mu)+(mu+4)/(2*mu)*(-9./8.*(-((f_solution/(1-downward_scattering*(1-albedo)))**((2+mu)/mu)*k_1**(2./mu))+(2*alpha_0)**(1./mu)*f_solution*(((2*mu+8)/(9*mu))+(1-downward_scattering*(1-albedo))**(-1))-(2*alpha_0)**(1./mu)*((2*mu+8)/(9*mu)))/(f_solution*((2*alpha_0)**(1./mu)-(f_solution*k_1/(1-downward_scattering*(1-albedo)))**(2./mu)))+(2*mu-1.)/(2*mu))**(-1.))
@@ -786,6 +860,8 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
         json.dump(data, open(file_name, 'w'), indent=4)
 
     """
+    What are we saving here?
+
     For details check Arcodia et al. (2019) or send an email at arcodia@mpe.mpg.de.
 
     Disk and corona monochromatic luminosities are obtained at the energy in input (default is 3000A and 2keV).
