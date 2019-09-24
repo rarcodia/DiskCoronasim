@@ -865,7 +865,7 @@ def runmodel(mass_input, mdot_input, photon_index=1.9,spin_input=0,
     For details check Arcodia et al. (2019) or send an email at arcodia@mpe.mpg.de.
 
     Disk and corona monochromatic luminosities are obtained at the energy in input (default is 3000A and 2keV).
-    Units are erg cm-2 s-1 Hz-1.
+    Units are erg s-1.
 
     fmean, actualfmean: one is <f>, the other <f>(1-eta), i.e. the actual average fraction of accretion
                         power that we observe as primary continuum from the X-ray corona.
