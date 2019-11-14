@@ -161,7 +161,7 @@ def plot_data(data_json_list, data_json_filenames,
         ax_Luv = fig_Luv.add_subplot(111)
         ax_Luv.set_xscale('log')
         ax_Luv.set_yscale('log')
-        if Luvmin<1e20 and Luvmax 1e20:
+        if Luvmin<1e20 and Luvmax>1e20:
             ax_Luv.set_ylim(1e20,Luvmax+0.5*Luvmax)
         ax_Luv.set_xlim(rmin,rmax)
         ax_Luv.set_xlabel(r'$R/R_{s}$', fontsize = 22)
