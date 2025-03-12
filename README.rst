@@ -14,7 +14,7 @@ If you find it useful for your research, please cite the paper `Arcodia et al. (
 
 Please note that the code is not intended to be a bullet-proof software and the purpose is simply to share a tool that can quickly provide disk and corona luminosities in a self consistent calculation, given a BH ID card (M, Mdot..).
 
-Comments welcome. For any questions, please send me an email at arcodia@mpe.mpg.de .
+Comments welcome. For any questions, please send me an email at riccardo.arcodia@gmail.com .
 
 ==========
 How to use
